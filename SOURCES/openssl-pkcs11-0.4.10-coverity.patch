@@ -1,0 +1,44 @@
+From 1492020acd161ad4ba75be87041ebdecde77f54b Mon Sep 17 00:00:00 2001
+From: Jakub Jelen <jjelen@redhat.com>
+Date: Tue, 20 Apr 2021 19:07:10 +0200
+Subject: [PATCH] Free memory on errors
+
+Thanks coverity
+---
+ src/p11_cert.c | 4 +++-
+ src/p11_key.c  | 4 +++-
+ 2 files changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/src/p11_cert.c b/src/p11_cert.c
+index 5cc5333..d027441 100644
+--- a/src/p11_cert.c
++++ b/src/p11_cert.c
+@@ -185,8 +185,10 @@ static int pkcs11_init_cert(PKCS11_CTX *ctx, PKCS11_TOKEN *token,
+ 	tpriv = PRIVTOKEN(token);
+ 	tmp = OPENSSL_realloc(tpriv->certs,
+ 		(tpriv->ncerts + 1) * sizeof(PKCS11_CERT));
+-	if (!tmp)
++	if (!tmp) {
++		OPENSSL_free(cpriv);
+ 		return -1;
++	}
+ 	tpriv->certs = tmp;
+ 	cert = tpriv->certs + tpriv->ncerts++;
+ 	memset(cert, 0, sizeof(PKCS11_CERT));
+diff --git a/src/p11_key.c b/src/p11_key.c
+index 494520f..451398a 100644
+--- a/src/p11_key.c
++++ b/src/p11_key.c
+@@ -553,8 +553,10 @@ static int pkcs11_init_key(PKCS11_CTX *ctx, PKCS11_TOKEN *token,
+ 		return -1;
+ 	memset(kpriv, 0, sizeof(PKCS11_KEY_private));
+ 	tmp = OPENSSL_realloc(keys->keys, (keys->num + 1) * sizeof(PKCS11_KEY));
+-	if (!tmp)
++	if (!tmp) {
++		OPENSSL_free(kpriv);
+ 		return -1;
++	}
+ 	keys->keys = tmp;
+ 	key = keys->keys + keys->num++;
+ 	memset(key, 0, sizeof(PKCS11_KEY));
+
