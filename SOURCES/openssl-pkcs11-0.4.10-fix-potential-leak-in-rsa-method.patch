@@ -1,0 +1,38 @@
+From d2f900a51de27f2d9229b0ae785c02ac272bd525 Mon Sep 17 00:00:00 2001
+From: Mateusz Kwiatkowski <m.kwiatkowski@avsystem.com>
+Date: Thu, 10 Sep 2020 15:47:41 +0200
+Subject: [PATCH] Fix potential leak in RSA method
+
+Upstream-Status: Backport [https://github.com/OpenSC/libp11/commit/5caa2779762c3d760f33b70cd9e1f70f15f3ea57]
+---
+ src/p11_rsa.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/src/p11_rsa.c b/src/p11_rsa.c
+index 221513c7..b6beef0b 100644
+--- a/src/p11_rsa.c
++++ b/src/p11_rsa.c
+@@ -352,6 +352,11 @@ int (*RSA_meth_get_priv_dec(const RSA_METHOD *meth))
+     return meth->rsa_priv_dec;
+ }
+ 
++static int (*RSA_meth_get_finish(const RSA_METHOD *meth)) (RSA *rsa)
++{
++    return meth->finish;
++}
++
+ #endif
+ 
+ static int pkcs11_rsa_priv_dec_method(int flen, const unsigned char *from,
+@@ -383,6 +388,11 @@ static int pkcs11_rsa_priv_enc_method(int flen, const unsigned char *from,
+ static int pkcs11_rsa_free_method(RSA *rsa)
+ {
+ 	RSA_set_ex_data(rsa, rsa_ex_index, NULL);
++	int (*orig_rsa_free_method)(RSA *rsa) =
++		RSA_meth_get_finish(RSA_get_default_method());
++	if (orig_rsa_free_method) {
++		return orig_rsa_free_method(rsa);
++	}
+ 	return 1;
+ }
+ 

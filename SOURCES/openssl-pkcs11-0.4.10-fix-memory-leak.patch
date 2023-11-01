@@ -1,0 +1,105 @@
+From 66ebbaac74a1f6f1960ea1049eb8e75ebbdf9782 Mon Sep 17 00:00:00 2001
+From: Michal Trojnara <Michal.Trojnara@stunnel.org>
+Date: Fri, 28 Feb 2020 05:42:47 +0100
+Subject: [PATCH] Revert "fix use-after-free on PKCS11_pkey_meths."
+
+This reverts commit e64496a198d4d2eb0310a22dc21be8b81367d319.
+
+Upstream-Status: Backport [https://github.com/OpenSC/libp11/commit/66ebbaac74a1f6f1960ea1049eb8e75ebbdf9782]
+---
+ src/p11_pkey.c | 10 ++++++----
+ 1 file changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/src/p11_pkey.c b/src/p11_pkey.c
+index 8df45abd..4ed98f65 100644
+--- a/src/p11_pkey.c
++++ b/src/p11_pkey.c
+@@ -673,8 +673,8 @@ int PKCS11_pkey_meths(ENGINE *e, EVP_PKEY_METHOD **pmeth,
+ 		EVP_PKEY_EC,
+ 		0
+ 	};
+-	EVP_PKEY_METHOD *pkey_method_rsa = NULL;
+-	EVP_PKEY_METHOD *pkey_method_ec = NULL;
++	static EVP_PKEY_METHOD *pkey_method_rsa = NULL;
++	static EVP_PKEY_METHOD *pkey_method_ec = NULL;
+ 
+ 	(void)e; /* squash the unused parameter warning */
+ 	/* all PKCS#11 engines currently share the same pkey_meths */
+@@ -687,14 +687,16 @@ int PKCS11_pkey_meths(ENGINE *e, EVP_PKEY_METHOD **pmeth,
+ 	/* get the EVP_PKEY_METHOD */
+ 	switch (nid) {
+ 	case EVP_PKEY_RSA:
+-		pkey_method_rsa = pkcs11_pkey_method_rsa();
++		if (!pkey_method_rsa)
++			pkey_method_rsa = pkcs11_pkey_method_rsa();
+ 		if (pkey_method_rsa == NULL)
+ 			return 0;
+ 		*pmeth = pkey_method_rsa;
+ 		return 1; /* success */
+ #ifndef OPENSSL_NO_EC
+ 	case EVP_PKEY_EC:
+-		pkey_method_ec = pkcs11_pkey_method_ec();
++		if (!pkey_method_ec)
++			pkey_method_ec = pkcs11_pkey_method_ec();
+ 		if (pkey_method_ec == NULL)
+ 			return 0;
+ 		*pmeth = pkey_method_ec;
+
+From 5aa56b4ac45655aab20bd49bb918e649875b0f4d Mon Sep 17 00:00:00 2001
+From: Michal Trojnara <Michal.Trojnara@stunnel.org>
+Date: Fri, 28 Feb 2020 07:09:42 +0100
+Subject: [PATCH] Disable EVP_PKEY_FLAG_DYNAMIC
+
+Fixes #328
+
+Upstream-Status: Backport [https://github.com/OpenSC/libp11/commit/5aa56b4ac45655aab20bd49bb918e649875b0f4d]
+---
+ src/p11_pkey.c | 14 +++++++++++++-
+ 1 file changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/src/p11_pkey.c b/src/p11_pkey.c
+index 4ed98f65..4e0956bf 100644
+--- a/src/p11_pkey.c
++++ b/src/p11_pkey.c
+@@ -36,7 +36,6 @@ static int (*orig_pkey_ec_sign) (EVP_PKEY_CTX *ctx,
+ 	const unsigned char *tbs, size_t tbslen);
+ #endif /* OPENSSL_NO_EC */
+ 
+-#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
+ struct evp_pkey_method_st {
+ 	int pkey_id;
+ 	int flags;
+@@ -75,6 +74,9 @@ struct evp_pkey_method_st {
+ 	int (*ctrl) (EVP_PKEY_CTX *ctx, int type, int p1, void *p2);
+ 	int (*ctrl_str) (EVP_PKEY_CTX *ctx, const char *type, const char *value);
+ } /* EVP_PKEY_METHOD */ ;
++
++#if OPENSSL_VERSION_NUMBER >= 0x10000000L
++#define EVP_PKEY_FLAG_DYNAMIC 1
+ #endif
+ 
+ #if OPENSSL_VERSION_NUMBER < 0x10002000L || defined(LIBRESSL_VERSION_NUMBER)
+@@ -516,6 +518,11 @@ static EVP_PKEY_METHOD *pkcs11_pkey_method_rsa()
+ 	new_meth = EVP_PKEY_meth_new(EVP_PKEY_RSA,
+ 		EVP_PKEY_FLAG_AUTOARGLEN);
+ 
++#ifdef EVP_PKEY_FLAG_DYNAMIC
++	/* do not allow OpenSSL to free this object */
++	new_meth->flags &= ~EVP_PKEY_FLAG_DYNAMIC;
++#endif
++
+ 	EVP_PKEY_meth_copy(new_meth, orig_meth);
+ 
+ 	EVP_PKEY_meth_set_sign(new_meth,
+@@ -655,6 +662,11 @@ static EVP_PKEY_METHOD *pkcs11_pkey_method_ec()
+ 	new_meth = EVP_PKEY_meth_new(EVP_PKEY_EC,
+ 		EVP_PKEY_FLAG_AUTOARGLEN);
+ 
++#ifdef EVP_PKEY_FLAG_DYNAMIC
++	/* do not allow OpenSSL to free this object */
++	new_meth->flags &= ~EVP_PKEY_FLAG_DYNAMIC;
++#endif
++
+ 	EVP_PKEY_meth_copy(new_meth, orig_meth);
+ 
+ 	EVP_PKEY_meth_set_sign(new_meth,
