@@ -1,0 +1,59 @@
+From 433947efff5712a6a3960c53e8b99e4fe123aace Mon Sep 17 00:00:00 2001
+From: Jakub Jelen <jjelen@redhat.com>
+Date: Wed, 19 May 2021 14:23:27 +0200
+Subject: [PATCH] Do not modify EC/RSA structures after assigning them to
+ EVP_PKEY
+
+This was causing OpenSSL 3.0 to fail detect our RSA/EC methods and
+failing the tests ({ec,rsa}-testfork.softhsm).
+
+The OpenSSL issue:
+https://github.com/openssl/openssl/issues/15350
+---
+ src/p11_ec.c  | 2 +-
+ src/p11_rsa.c | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/src/p11_ec.c b/src/p11_ec.c
+index 294cbad..9c5ee0f 100644
+--- a/src/p11_ec.c
++++ b/src/p11_ec.c
+@@ -365,7 +365,6 @@ static EVP_PKEY *pkcs11_get_evp_key_ec(PKCS11_KEY *key)
+ 		EC_KEY_free(ec);
+ 		return NULL;
+ 	}
+-	EVP_PKEY_set1_EC_KEY(pk, ec); /* Also increments the ec ref count */
+ 
+ 	if (key->isPrivate) {
+ #if OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)
+@@ -379,6 +378,7 @@ static EVP_PKEY *pkcs11_get_evp_key_ec(PKCS11_KEY *key)
+ 	 * unless the key has the "sensitive" attribute set */
+ 
+ 	pkcs11_set_ex_data_ec(ec, key);
++	EVP_PKEY_set1_EC_KEY(pk, ec); /* Also increments the ec ref count */
+ 	EC_KEY_free(ec); /* Drops our reference to it */
+ 	return pk;
+ }
+diff --git a/src/p11_rsa.c b/src/p11_rsa.c
+index f2f3eb3..183cce2 100644
+--- a/src/p11_rsa.c
++++ b/src/p11_rsa.c
+@@ -286,8 +286,6 @@ static EVP_PKEY *pkcs11_get_evp_key_rsa(PKCS11_KEY *key)
+ 		RSA_free(rsa);
+ 		return NULL;
+ 	}
+-	EVP_PKEY_set1_RSA(pk, rsa); /* Also increments the rsa ref count */
+-
+ 	if (key->isPrivate) {
+ 		RSA_set_method(rsa, PKCS11_get_rsa_method());
+ #if OPENSSL_VERSION_NUMBER >= 0x10100005L && !defined(LIBRESSL_VERSION_NUMBER)
+@@ -304,6 +302,8 @@ static EVP_PKEY *pkcs11_get_evp_key_rsa(PKCS11_KEY *key)
+ 	rsa->flags |= RSA_FLAG_SIGN_VER;
+ #endif
+ 	pkcs11_set_ex_data_rsa(rsa, key);
++
++	EVP_PKEY_set1_RSA(pk, rsa); /* Also increments the rsa ref count */
+ 	RSA_free(rsa); /* Drops our reference to it */
+ 	return pk;
+ }
+
